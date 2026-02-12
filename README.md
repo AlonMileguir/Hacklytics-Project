@@ -13,7 +13,7 @@ The Actian VectorAI DB and Python client. Please review the [Known Issues](#-kno
 
 ### Supported platforms
 
-- The VectorAI DB Docker image is currently supported only on Linux/amd64 (x86_64).
+- The VectorAI DB Docker image is currently fully supported on Linux/amd64 (x86_64) and works on mac machines using docker.
 - The Python client package is supported on all major platforms (Windows, macOS, and Linux).
 
 ## Features
@@ -25,9 +25,33 @@ The Actian VectorAI DB and Python client. Please review the [Known Issues](#-kno
 - 📦 **Pydantic models** - Type hints and validation throughout
 - 🎯 **gRPC transport** - High-performance communication
 
-## 📥 Docker container installation
+## Quick Install – Pull from DockerHub
 
-If you don't have the .tar image, see the DockerHub version below.
+1. Make sure you have [Docker](https://docs.docker.com/get-docker/) installed.
+
+2. Clone this repository.
+
+3. Start the database:
+
+```bash
+   docker compose up
+```
+
+   Or run in the background:
+
+```bash
+   docker compose up -d
+```
+
+  The database will be available at `localhost:50051`. The docker-compose.yml file handles the base config required.
+
+4. To stop the container:
+
+```bash
+   docker compose down
+```
+
+## 📥 Docker container installation – with the .tar image file (not included in this repository)
 
 Load the container archive into your container environment:
 
@@ -65,32 +89,6 @@ services:
 ```
 
 _Note: Collections and logs are persisted under the mounted /data directory_
-
-### Pull from DockerHub
-
-1. Make sure you have [Docker](https://docs.docker.com/get-docker/) installed.
-
-2. Clone this repository.
-
-3. Start the database:
-
-```bash
-   docker compose up
-```
-
-   Or run in the background:
-
-```bash
-   docker compose up -d
-```
-
-  The database will be available at `localhost:50051`.
-
-4. To stop the container:
-
-```bash
-   docker compose down
-```
 
 ### Examine container logs
 
@@ -295,3 +293,4 @@ Proprietary - Actian Corporation
 <p align="center">
   <b>Copyright © 2025-2026 Actian Corporation. All Rights Reserved.</b>
 </p>
+
