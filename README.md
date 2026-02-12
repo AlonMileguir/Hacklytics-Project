@@ -13,7 +13,7 @@ The Actian VectorAI DB and Python client. Please review the [Known Issues](#-kno
 
 ### Supported platforms
 
-- The VectorAI DB Docker image is currently fully supported on Linux/amd64 (x86_64) and works on mac machines using docker.
+- The VectorAI DB Docker image is currently fully supported on Linux/amd64 (x86_64) and works on Apple Silicon machines using Docker Desktop.
 - The Python client package is supported on all major platforms (Windows, macOS, and Linux).
 
 ## Features
@@ -27,7 +27,7 @@ The Actian VectorAI DB and Python client. Please review the [Known Issues](#-kno
 
 ## Quick Install – Pull from DockerHub
 
-1. Make sure you have [Docker](https://docs.docker.com/get-docker/) installed.
+1. Make sure you have [Docker](https://docs.docker.com/get-docker/) installed. **Note to Mac users with Apple Silicon:** Docker Desktop automatically handles running this amd64 image on your ARM Mac.
 
 2. Clone this repository.
 
@@ -293,4 +293,5 @@ Proprietary - Actian Corporation
 <p align="center">
   <b>Copyright © 2025-2026 Actian Corporation. All Rights Reserved.</b>
 </p>
+
 
