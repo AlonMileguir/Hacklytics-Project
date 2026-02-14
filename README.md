@@ -189,6 +189,8 @@ async def main():
 asyncio.run(main())
 ```
 
+**Note:** To use the sync `CortexClient` in async contexts (e.g., MCP servers, FastAPI), wrap calls with `asyncio.to_thread()`. For fully async code, use `AsyncCortexClient` instead.
+
 ## 📚 Core API
 
 ### Collection management
@@ -258,11 +260,34 @@ results = client.search_filtered("products", query_vector, filter, top_k=10)
 
 ## 📖 Examples
 
+### 🌟 Featured: End-to-End RAG Example
+
+**New to vector databases?** Start here! The RAG example shows how VectorAI DB integrates into a complete AI application:
+
 ```bash
-# Run examples
-PYTHONPATH=. .venv/bin/python examples/quick_start.py
-PYTHONPATH=. .venv/bin/python examples/async_example.py
-PYTHONPATH=. .venv/bin/python examples/batch_upsert.py
+# Install dependencies
+pip install -r examples/rag/requirements.txt
+
+# Run the RAG example
+python examples/rag/rag_example.py
+```
+
+See [examples/rag/README.md](./examples/rag/README.md) for a detailed walkthrough of building a Retrieval-Augmented Generation application.
+
+### Other Examples
+
+```bash
+# Quick start - recommended starting point
+python examples/quick_start.py
+
+# Semantic search with filtering
+python examples/semantic_search.py
+
+# Async operations
+python examples/async_example.py
+
+# Batch operations
+python examples/batch_upsert.py
 ```
 
 ## 📊 Storage
