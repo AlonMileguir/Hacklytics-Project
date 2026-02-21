@@ -4,6 +4,9 @@
 # Web application
 streamlit>=1.32.0
 
+# Gemini LLM + embeddings (clinical simulation + case search)
+google-genai>=1.0.0
+
 # BiomedCLIP model loader (open_clip_torch, not open_clip)
 open_clip_torch>=2.24.0
 
@@ -14,8 +17,18 @@ torchvision>=0.15.0
 # Image loading
 Pillow>=10.0.0
 
+# Medical imaging datasets (no account required)
+medmnist>=3.0.0
+
 # Numerical ops (likely already installed via VectorAI DB client)
 numpy>=1.24.0
+
+# MultiCaRe dataset (real PubMed Central case reports)
+multiversity
+ipython
+
+# Environment variable loading
+python-dotenv
 
 # Optional: DICOM file support (medical scanner files)
 # Uncomment the line below if you need to process .dcm files

@@ -1,10 +1,8 @@
 """
-Medical Image Similarity Search — Streamlit Web App
-
-Three tabs:
-  🔍 Search     — Upload a query image, view top-K similar results
-  📥 Add Images — Upload medical images to encode and store in VectorAI DB
-  🗂  Browse     — Paginate through all stored images
+MedCase — Clinical Education Platform
+======================================
+Medical students play the attending physician.
+Gemini plays the patient + clinical environment and evaluates reasoning.
 
 Run with:
     streamlit run app/web_app.py
@@ -12,99 +10,115 @@ Run with:
 
 import sys
 import os
-import tempfile
 from pathlib import Path
 
 import streamlit as st
 from PIL import Image
 
-# Add project root to sys.path so we can import app.medical_image_encoder
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-from app.medical_image_encoder import (
-    MedicalImageEncoder,
-    setup_collection,
-    COLLECTION_NAME,
+# Load .env if present (e.g. GEMINI_API_KEY)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(ROOT / ".env")
+except ImportError:
+    pass
+
+from app.case_manager import (
+    get_all_cases,
+    filter_cases,
+    get_case_by_id,
+    get_case_image_path,
+    get_unique_specialties,
+    get_unique_difficulties,
+    index_all_cases,
+    is_cases_indexed,
+    search_cases,
+    is_multicare_available,
+)
+from app.clinical_sim import (
+    get_opening_message,
+    send_message,
+    get_hint,
+    detect_intent,
+    is_case_complete,
 )
 from cortex import CortexClient
-from cortex.filters import Filter, Field
 
 # ---------------------------------------------------------------------------
-# Config
+# Page config
 # ---------------------------------------------------------------------------
-
-# Uploaded images are saved here permanently so search results can show them
-UPLOADS_DIR = ROOT / "uploads"
-UPLOADS_DIR.mkdir(exist_ok=True)
-
-PAGE_SIZE = 12  # images per page in Browse tab
-
-MODALITIES = ["xray", "mri", "ct", "pathology", "ultrasound", "other"]
 
 st.set_page_config(
-    page_title="Medical Image Search",
-    page_icon="🏥",
+    page_title="MedCase — Clinical Education",
+    page_icon="🩺",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 # ---------------------------------------------------------------------------
+# Session state defaults
+# ---------------------------------------------------------------------------
+
+defaults = {
+    "active_case": None,        # dict: the current case
+    "chat_history": [],         # list of {role, content}
+    "revealed": set(),          # {"exam", "labs", "imaging"}
+    "case_complete": False,
+    "view": "library",          # "library" | "simulation"
+    "search_query": "",
+}
+for k, v in defaults.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-@st.cache_resource(show_spinner="Loading BiomedCLIP model (first run ~30 s)…")
-def get_encoder() -> MedicalImageEncoder:
-    """Load BiomedCLIP once and reuse across all reruns."""
-    return MedicalImageEncoder()
+DIFFICULTY_COLOR = {"Beginner": "🟢", "Intermediate": "🟡", "Advanced": "🔴"}
+DIFFICULTY_BADGE = {"Beginner": "green", "Intermediate": "orange", "Advanced": "red"}
 
 
-def try_connect(server: str) -> tuple[bool, str]:
+def try_db_connect(server: str):
     try:
-        with CortexClient(server) as client:
-            version, _ = client.health_check()
-        return True, version
+        with CortexClient(server) as c:
+            v, _ = c.health_check()
+        return True, v
     except Exception as e:
         return False, str(e)
 
 
-def get_collection_count(server: str) -> int:
-    try:
-        with CortexClient(server) as client:
-            if client.has_collection(COLLECTION_NAME):
-                return client.count(COLLECTION_NAME)
-    except Exception:
-        pass
-    return 0
+def start_case(case: dict, api_key: str):
+    """Initialise session state for a new case and generate the opening message."""
+    st.session_state.active_case = case
+    st.session_state.chat_history = []
+    st.session_state.revealed = set()
+    st.session_state.case_complete = False
+    st.session_state.view = "simulation"
+
+    with st.spinner("Starting clinical encounter…"):
+        opening = get_opening_message(api_key, case)
+
+    st.session_state.chat_history = [{"role": "gemini", "content": opening}]
 
 
-def image_card(payload: dict, score: float | None = None):
-    """Render an image thumbnail with score badge and metadata tags."""
-    img_path = payload.get("path", "")
-    if img_path and Path(img_path).exists():
-        st.image(img_path, use_container_width=True)
+def reset_to_library():
+    st.session_state.active_case = None
+    st.session_state.chat_history = []
+    st.session_state.revealed = set()
+    st.session_state.case_complete = False
+    st.session_state.view = "library"
+
+
+def render_chat_message(role: str, content: str):
+    if role == "student":
+        with st.chat_message("user", avatar="👨‍⚕️"):
+            st.markdown(content)
     else:
-        st.markdown(
-            "<div style='background:#262730;height:130px;border-radius:8px;"
-            "display:flex;align-items:center;justify-content:center;"
-            "color:#888;font-size:2rem'>📷</div>",
-            unsafe_allow_html=True,
-        )
-
-    if score is not None:
-        pct = score * 100
-        color = "green" if pct >= 85 else "orange" if pct >= 70 else "red"
-        st.markdown(f"**Match:** :{color}[{pct:.1f}%]")
-
-    st.caption(payload.get("filename", "unknown"))
-
-    tags = []
-    if payload.get("modality"):
-        tags.append(f"🏷 {payload['modality']}")
-    if payload.get("label"):
-        tags.append(f"📋 {payload['label']}")
-    if tags:
-        st.caption("  ·  ".join(tags))
+        with st.chat_message("assistant", avatar="🤒"):
+            st.markdown(content)
 
 
 # ---------------------------------------------------------------------------
@@ -112,311 +126,353 @@ def image_card(payload: dict, score: float | None = None):
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    st.title("🏥 Medical Image Search")
-    st.caption("BiomedCLIP  ·  Actian VectorAI DB")
+    st.title("🩺 MedCase")
+    st.caption("Clinical Education Platform")
     st.divider()
 
-    server = st.text_input("VectorAI DB server", value="localhost:50051")
+    # API Key — loaded from .env, not shown to user
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        st.error("GEMINI_API_KEY not set. Add it to your .env file.")
 
-    ok, version_or_err = try_connect(server)
-    if ok:
-        st.success("Connected")
-        st.caption(f"Server: {version_or_err}")
-        db_count = get_collection_count(server)
-        st.metric("Images in database", db_count)
+    st.divider()
+
+    # Data source
+    st.markdown("**Case Library**")
+    if is_multicare_available():
+        n = len(get_all_cases())
+        st.success(f"✅ MultiCaRe dataset ({n} cases)")
+        st.caption("Real PubMed Central case reports")
     else:
-        st.error("Not connected")
-        st.caption(version_or_err)
-        st.code("docker compose up -d", language="bash")
-        db_count = 0
-
-    st.divider()
-    st.markdown("**Search settings**")
-    top_k = st.slider("Results (top-k)", min_value=1, max_value=20, value=5)
-    filter_modality = st.selectbox("Filter by modality", ["All"] + MODALITIES)
-
-    st.divider()
-    st.markdown(
-        "<small>Model: [BiomedCLIP](https://huggingface.co/microsoft/"
-        "BiomedCLIP-PubMedBERT_256-vit_base_patch16_224)  ·  512-d COSINE</small>",
-        unsafe_allow_html=True,
-    )
-
-# ---------------------------------------------------------------------------
-# Tabs
-# ---------------------------------------------------------------------------
-
-tab_search, tab_add, tab_browse = st.tabs(["🔍 Search", "📥 Add Images", "🗂 Browse"])
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# SEARCH TAB
-# ═══════════════════════════════════════════════════════════════════════════════
-
-with tab_search:
-    st.header("Find Similar Medical Images")
-    st.caption(
-        "Upload any medical image — BiomedCLIP encodes it in real time and retrieves "
-        "the most visually similar images from the database."
-    )
-
-    col_left, col_right = st.columns([1, 2], gap="large")
-
-    with col_left:
-        query_file = st.file_uploader(
-            "Query image",
-            type=["jpg", "jpeg", "png", "tiff", "bmp"],
-            label_visibility="collapsed",
+        st.info("📦 Demo cases (9 cases)")
+        st.caption(
+            "Run `python app/setup_multicare.py --api-key KEY` "
+            "to load real MultiCaRe cases."
         )
-        if query_file:
-            st.image(
-                Image.open(query_file).convert("RGB"),
-                caption="Query image",
-                use_container_width=True,
-            )
-            search_btn = st.button(
-                "🔍 Search",
-                type="primary",
-                use_container_width=True,
-                disabled=not ok,
-            )
-            if not ok:
-                st.warning("Connect the database first.")
-        else:
-            st.info("⬆️ Upload a medical image to search")
-            search_btn = False
 
-    with col_right:
-        if query_file and search_btn:
-            if db_count == 0:
-                st.warning(
-                    "The database is empty. "
-                    "Add images first using the **Add Images** tab."
-                )
-            else:
-                suffix = Path(query_file.name).suffix or ".jpg"
-                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-                    tmp.write(query_file.getbuffer())
-                    tmp_path = tmp.name
+    st.divider()
 
-                try:
-                    with st.spinner("Encoding and searching…"):
-                        encoder = get_encoder()
-                        filter_obj = (
-                            Filter().must(Field("modality").eq(filter_modality))
-                            if filter_modality != "All"
-                            else None
-                        )
-                        with CortexClient(server) as client:
-                            results = encoder.search_similar(
-                                client,
-                                tmp_path,
-                                top_k=top_k,
-                                filter=filter_obj,
-                            )
+    # DB connection
+    st.markdown("**VectorAI DB**")
+    db_server = st.text_input("Server", value="localhost:50051", label_visibility="collapsed")
+    db_ok, db_info = try_db_connect(db_server)
+    if db_ok:
+        st.success(f"Connected")
+        st.caption(db_info)
 
-                    if not results:
-                        st.info(
-                            "No results found. "
-                            "Try changing the modality filter or add more images."
-                        )
-                    else:
-                        st.subheader(f"Top {len(results)} matches")
-                        grid = st.columns(3)
-                        for i, r in enumerate(results):
-                            with grid[i % 3]:
-                                image_card(r.payload or {}, score=r.score)
+        # Index cases button
+        try:
+            with CortexClient(db_server) as c:
+                already = is_cases_indexed(c)
+        except Exception:
+            already = False
 
-                except Exception as e:
-                    st.error(f"Search failed: {e}")
-                finally:
-                    os.unlink(tmp_path)
-
-        elif query_file and not search_btn:
-            st.info("Click **Search** to find similar images.")
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# ADD IMAGES TAB
-# ═══════════════════════════════════════════════════════════════════════════════
-
-with tab_add:
-    st.header("Add Images to Database")
-    st.caption(
-        "Upload medical images to encode with BiomedCLIP and store in VectorAI DB. "
-        "Images are saved locally so they can be shown in search results."
-    )
-
-    if not ok:
-        st.error("Connect to VectorAI DB to add images.")
+        if not already and api_key:
+            if st.button("📥 Index cases into DB", use_container_width=True):
+                with st.spinner("Indexing cases with Gemini embeddings…"):
+                    index_all_cases(api_key, db_server)
+                st.success("Cases indexed! Semantic search now available.")
+                st.rerun()
+        elif already:
+            st.caption("✅ Cases indexed — semantic search active")
     else:
-        col_form, col_preview = st.columns([1, 1], gap="large")
+        st.error("DB not connected")
+        st.caption("Start: `docker compose up -d`")
 
-        with col_form:
-            files = st.file_uploader(
-                "Select images",
-                type=["jpg", "jpeg", "png", "tiff", "bmp"],
-                accept_multiple_files=True,
-                label_visibility="collapsed",
-            )
+    st.divider()
 
-            modality_sel = st.selectbox("Modality", ["(none)"] + MODALITIES)
-            label_input = st.text_input(
-                "Label / Diagnosis (optional)",
-                placeholder="e.g. pneumonia, normal, fracture",
-            )
+    # Navigation
+    if st.session_state.view == "simulation" and st.session_state.active_case:
+        case = st.session_state.active_case
+        st.markdown(f"**Current Case**")
+        st.markdown(f"_{case['title']}_")
+        st.caption(
+            f"{DIFFICULTY_COLOR[case['difficulty']]} {case['difficulty']}  ·  {case['specialty']}"
+        )
+        st.divider()
 
-            with st.expander("Extra metadata fields"):
-                c1, c2 = st.columns(2)
-                ek1 = c1.text_input("Key", key="ek1", placeholder="patient_id")
-                ev1 = c2.text_input("Value", key="ev1", placeholder="P001")
-                ek2 = c1.text_input("Key", key="ek2", placeholder="hospital")
-                ev2 = c2.text_input("Value", key="ev2", placeholder="City Medical")
-
-            encode_btn = st.button(
-                f"⚡ Encode & Store {len(files)} image(s)"
-                if files
-                else "⚡ Encode & Store",
-                type="primary",
-                use_container_width=True,
-                disabled=not files,
-            )
-
-        with col_preview:
-            if files:
-                st.caption(f"{len(files)} image(s) selected")
-                pcols = st.columns(min(3, len(files)))
-                for i, f in enumerate(files[:6]):
-                    with pcols[i % 3]:
-                        st.image(
-                            Image.open(f).convert("RGB"),
-                            caption=f.name,
-                            use_container_width=True,
-                        )
-                if len(files) > 6:
-                    st.caption(f"… and {len(files) - 6} more")
+        # Revealed status
+        st.markdown("**Investigations**")
+        for item, label in [("exam", "Physical Exam"), ("labs", "Lab Results"), ("imaging", "Imaging")]:
+            if item in st.session_state.revealed:
+                st.markdown(f"✅ {label}")
             else:
-                st.info("⬆️ Select images to preview them here")
+                st.markdown(f"⬜ {label}")
 
-        if encode_btn and files:
-            # Build shared metadata
-            metadata: dict = {}
-            if modality_sel != "(none)":
-                metadata["modality"] = modality_sel
-            if label_input:
-                metadata["label"] = label_input
-            if ek1 and ev1:
-                metadata[ek1] = ev1
-            if ek2 and ev2:
-                metadata[ek2] = ev2
-
-            encoder = get_encoder()
-
-            # Ensure collection exists and get base ID
-            with CortexClient(server) as client:
-                setup_collection(client)
-                base_id = client.count(COLLECTION_NAME)
-
-            progress_bar = st.progress(0.0, text="Starting…")
-            success_count = 0
-            failures: list[str] = []
-
-            for i, file in enumerate(files):
-                progress_bar.progress(i / len(files), text=f"Encoding {file.name}…")
-
-                # Save to uploads/ permanently (so search results can show the image)
-                dest = UPLOADS_DIR / file.name
-                if dest.exists():
-                    dest = UPLOADS_DIR / f"{dest.stem}_{base_id + i}{dest.suffix}"
-                dest.write_bytes(file.getbuffer())
-
-                try:
-                    vector = encoder.encode_image(str(dest))
-                    payload = {
-                        "filename": file.name,
-                        "path": str(dest),
-                        "format": dest.suffix.lower(),
-                        **metadata,
-                    }
-                    with CortexClient(server) as client:
-                        client.upsert(
-                            COLLECTION_NAME,
-                            id=base_id + i,
-                            vector=vector.tolist(),
-                            payload=payload,
-                        )
-                    success_count += 1
-                except Exception as e:
-                    failures.append(f"{file.name}: {e}")
-
-            progress_bar.progress(1.0, text="Done!")
-
-            if success_count:
-                st.success(f"✅ Stored {success_count} image(s) in the database!")
-            for msg in failures:
-                st.warning(f"⚠️ Failed — {msg}")
-
+        st.divider()
+        if st.button("← Back to Case Library", use_container_width=True):
+            reset_to_library()
             st.rerun()
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# BROWSE TAB
-# ═══════════════════════════════════════════════════════════════════════════════
 
-with tab_browse:
-    st.header("Browse Database")
+# ---------------------------------------------------------------------------
+# LIBRARY VIEW
+# ---------------------------------------------------------------------------
 
-    if not ok:
-        st.error("Connect to VectorAI DB to browse.")
-    elif db_count == 0:
-        st.info("Database is empty. Add images using the **Add Images** tab.")
+if st.session_state.view == "library":
+    st.title("🏥 MedCase — Clinical Education Platform")
+    st.markdown(
+        "Practice clinical reasoning by taking on the role of the attending physician. "
+        "Gemini plays your patient and evaluates your diagnosis and treatment plan."
+    )
+
+    # Search bar
+    col_search, col_btn = st.columns([4, 1])
+    with col_search:
+        search_q = st.text_input(
+            "Search cases",
+            placeholder="e.g. 'chest pain', 'dermatology', 'beginner pneumonia'…",
+            label_visibility="collapsed",
+        )
+    with col_btn:
+        do_search = st.button("🔍 Search", use_container_width=True)
+
+    # Filters
+    f_col1, f_col2, f_col3 = st.columns(3)
+    with f_col1:
+        specialty_filter = st.selectbox(
+            "Specialty", ["All"] + get_unique_specialties()
+        )
+    with f_col2:
+        difficulty_filter = st.selectbox(
+            "Difficulty", ["All"] + get_unique_difficulties()
+        )
+    with f_col3:
+        st.markdown("")  # spacer
+
+    st.divider()
+
+    # Resolve which cases to show
+    if do_search and search_q and api_key:
+        with st.spinner("Searching cases…"):
+            cases = search_cases(api_key, search_q, top_k=9, db_server=db_server)
+        st.caption(f"Showing {len(cases)} results for _\"{search_q}\"_")
     else:
-        # Pagination state
-        if "browse_page" not in st.session_state:
-            st.session_state.browse_page = 1
+        cases = filter_cases(specialty_filter, difficulty_filter)
+        st.caption(f"{len(cases)} case(s) available")
 
-        total_pages = max(1, (db_count + PAGE_SIZE - 1) // PAGE_SIZE)
-        # Clamp in case images were deleted
-        st.session_state.browse_page = min(st.session_state.browse_page, total_pages)
-        page = st.session_state.browse_page
+    if not cases:
+        st.info("No cases match your filters.")
+    else:
+        # 3-column card grid
+        cols = st.columns(3)
+        for i, case in enumerate(cases):
+            with cols[i % 3]:
+                img_path = get_case_image_path(case)
 
-        # cursor = offset per CRTX-232
-        offset = (page - 1) * PAGE_SIZE
+                with st.container(border=True):
+                    if img_path and img_path.exists():
+                        st.image(str(img_path), use_container_width=True)
+                    else:
+                        st.markdown(
+                            "<div style='background:#1e2130;height:100px;border-radius:6px;"
+                            "display:flex;align-items:center;justify-content:center;"
+                            "color:#888;font-size:1.5rem'>🏥</div>",
+                            unsafe_allow_html=True,
+                        )
 
-        st.caption(f"Page {page} of {total_pages}  ·  {db_count} total images")
+                    st.markdown(f"**{case['title']}**")
+                    diff = case["difficulty"]
+                    st.markdown(
+                        f":{DIFFICULTY_BADGE[diff]}[{DIFFICULTY_COLOR[diff]} {diff}]  ·  "
+                        f"_{case['specialty']}_"
+                    )
+                    st.caption(
+                        f"👤 {case['patient']['age']}yo {case['patient']['sex']}  ·  "
+                        f"_{case['chief_complaint']}_"
+                    )
 
-        with CortexClient(server) as client:
-            records, _ = client.scroll(
-                COLLECTION_NAME,
-                limit=PAGE_SIZE,
-                cursor=offset if offset > 0 else None,
-                with_payload=True,
+                    if st.button(
+                        "Start Case →",
+                        key=f"start_{case['id']}",
+                        use_container_width=True,
+                        type="primary",
+                        disabled=not api_key,
+                    ):
+                        start_case(case, api_key)
+                        st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# SIMULATION VIEW
+# ---------------------------------------------------------------------------
+
+elif st.session_state.view == "simulation":
+    case = st.session_state.active_case
+    if not case:
+        reset_to_library()
+        st.rerun()
+
+    # ── Header ──────────────────────────────────────────────────────────────
+    h_col1, h_col2 = st.columns([3, 1])
+    with h_col1:
+        st.markdown(f"## 🩺 {case['title']}")
+        diff = case["difficulty"]
+        st.markdown(
+            f":{DIFFICULTY_BADGE[diff]}[{DIFFICULTY_COLOR[diff]} {diff}]  ·  "
+            f"_{case['specialty']}_  ·  "
+            f"**{case['patient']['age']}yo {case['patient']['sex']}**"
+        )
+    with h_col2:
+        if st.session_state.case_complete:
+            st.success("Case Complete ✅")
+
+    st.divider()
+
+    # ── Two-column layout: chat | info panel ────────────────────────────────
+    chat_col, info_col = st.columns([2, 1], gap="large")
+
+    # ── INFO PANEL (right) ───────────────────────────────────────────────────
+    with info_col:
+        st.markdown("### 📋 Patient Chart")
+
+        with st.expander("👤 Patient Info", expanded=True):
+            p = case["patient"]
+            st.markdown(f"**Name:** {p['name']}")
+            st.markdown(f"**Age/Sex:** {p['age']}yo {p['sex']}")
+            if p.get("occupation"):
+                st.markdown(f"**Occupation:** {p['occupation']}")
+            st.markdown(f"**CC:** _{case['chief_complaint']}_")
+            st.markdown(f"**History:** {case['history']}")
+
+        # Physical Exam — reveal when unlocked
+        with st.expander(
+            "🩺 Physical Examination" + (" ✅" if "exam" in st.session_state.revealed else " 🔒"),
+            expanded="exam" in st.session_state.revealed,
+        ):
+            if "exam" in st.session_state.revealed:
+                st.markdown(case["exam_findings"])
+            else:
+                st.caption("Perform a physical examination in the chat to reveal findings.")
+
+        # Lab Results
+        with st.expander(
+            "🧪 Lab Results" + (" ✅" if "labs" in st.session_state.revealed else " 🔒"),
+            expanded="labs" in st.session_state.revealed,
+        ):
+            if "labs" in st.session_state.revealed:
+                st.markdown(case["labs"])
+            else:
+                st.caption("Order laboratory investigations in the chat to reveal results.")
+
+        # Imaging
+        with st.expander(
+            f"🖼 {case['imaging_type']}" + (" ✅" if "imaging" in st.session_state.revealed else " 🔒"),
+            expanded="imaging" in st.session_state.revealed,
+        ):
+            if "imaging" in st.session_state.revealed:
+                img_path = get_case_image_path(case)
+                if img_path and img_path.exists():
+                    st.image(str(img_path), caption=case["imaging_type"], use_container_width=True)
+                else:
+                    st.info("Image not available for this case.")
+                st.markdown(f"**Report:** _{case['imaging_description']}_")
+            else:
+                st.caption(f"Order {case['imaging_type']} in the chat to reveal the image.")
+
+        # Quick-action buttons
+        st.markdown("### ⚡ Quick Actions")
+        st.caption("Click to send a standard clinical request:")
+
+        qa_cols = st.columns(2)
+        actions = [
+            ("🩺 Examine Patient", "I'd like to perform a physical examination."),
+            ("🧪 Order Labs", "Please order a full blood count, metabolic panel, and relevant labs."),
+            (f"🖼 Order {case['imaging_type'].split()[0]}", f"I'd like to order a {case['imaging_type']}."),
+            ("💡 Give me a hint", "__HINT__"),
+        ]
+        for j, (label, msg) in enumerate(actions):
+            with qa_cols[j % 2]:
+                if st.button(label, use_container_width=True, key=f"qa_{j}"):
+                    if msg == "__HINT__":
+                        with st.spinner("Getting a hint…"):
+                            hint = get_hint(
+                                api_key, case, st.session_state.chat_history,
+                                st.session_state.revealed
+                            )
+                        st.session_state.chat_history.append(
+                            {"role": "student", "content": "Can you give me a hint?"}
+                        )
+                        st.session_state.chat_history.append(
+                            {"role": "gemini", "content": hint}
+                        )
+                    else:
+                        # Process like a normal chat message
+                        intents = detect_intent(msg)
+                        new_revealed = st.session_state.revealed | (
+                            intents & {"exam", "labs", "imaging"}
+                        )
+                        with st.spinner("…"):
+                            reply = send_message(
+                                api_key, case,
+                                st.session_state.chat_history,
+                                msg,
+                                new_revealed,
+                            )
+                        st.session_state.revealed = new_revealed
+                        st.session_state.chat_history.append({"role": "student", "content": msg})
+                        st.session_state.chat_history.append({"role": "gemini", "content": reply})
+
+                        if is_case_complete(st.session_state.chat_history):
+                            st.session_state.case_complete = True
+                    st.rerun()
+
+    # ── CHAT PANEL (left) ────────────────────────────────────────────────────
+    with chat_col:
+        st.markdown("### 💬 Clinical Encounter")
+        st.caption(
+            "You are the attending physician. Talk to your patient, order investigations, "
+            "then state your diagnosis and treatment plan."
+        )
+
+        # Render full chat history
+        chat_container = st.container(height=520)
+        with chat_container:
+            for msg in st.session_state.chat_history:
+                render_chat_message(msg["role"], msg["content"])
+
+        # Input
+        if not st.session_state.case_complete:
+            user_input = st.chat_input(
+                "Speak to your patient or order investigations…",
+                disabled=not api_key,
             )
+            if user_input:
+                # Detect intent and update revealed set
+                intents = detect_intent(user_input)
+                new_revealed = st.session_state.revealed | (intents & {"exam", "labs", "imaging"})
 
-        if records:
-            grid = st.columns(4)
-            for i, rec in enumerate(records):
-                with grid[i % 4]:
-                    image_card(rec.payload or {})
+                with st.spinner("…"):
+                    reply = send_message(
+                        api_key,
+                        case,
+                        st.session_state.chat_history,
+                        user_input,
+                        new_revealed,
+                    )
+
+                st.session_state.revealed = new_revealed
+                st.session_state.chat_history.append(
+                    {"role": "student", "content": user_input}
+                )
+                st.session_state.chat_history.append(
+                    {"role": "gemini", "content": reply}
+                )
+
+                if is_case_complete(st.session_state.chat_history):
+                    st.session_state.case_complete = True
+
+                st.rerun()
+
         else:
-            st.info("No records found on this page.")
-
-        # Pagination controls
-        st.divider()
-        nav_l, nav_c, nav_r = st.columns([1, 3, 1])
-
-        with nav_l:
-            if st.button("← Prev", disabled=(page <= 1), use_container_width=True):
-                st.session_state.browse_page -= 1
-                st.rerun()
-
-        with nav_c:
-            st.markdown(
-                f"<p style='text-align:center;padding-top:6px'>"
-                f"Page <b>{page}</b> of <b>{total_pages}</b></p>",
-                unsafe_allow_html=True,
-            )
-
-        with nav_r:
-            if st.button(
-                "Next →", disabled=(page >= total_pages), use_container_width=True
-            ):
-                st.session_state.browse_page += 1
-                st.rerun()
+            # Case complete — show end screen
+            st.success("🎉 Case complete! Review the feedback above.")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("🔄 Try Another Case", type="primary", use_container_width=True):
+                    reset_to_library()
+                    st.rerun()
+            with c2:
+                if st.button("🔁 Redo This Case", use_container_width=True):
+                    start_case(case, api_key)
+                    st.rerun()
