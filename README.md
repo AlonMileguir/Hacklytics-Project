@@ -11,10 +11,28 @@
 
 The Actian VectorAI DB and Python client. Please review the [Known Issues](#-known-issues) section before deploying.
 
+## What is VectorAI DB?
+
+Actian VectorAI DB is a vector database — a specialized database for AI applications that search by **meaning**, not just keywords. Think of it like this:
+- Regular database: "Find products named 'laptop'"
+- Vector database: "Find products *similar* to 'portable computer for students'"
+
+**Common use cases:** RAG chatbots, semantic search, recommendation engines, anomaly detection.
+
+**Important:** VectorAI DB does **not** include an embedding model. You need to bring your own (e.g. `sentence-transformers`, OpenAI embeddings). It handles storage and search — you handle the embeddings.
+
+**About gRPC:** The database communicates over gRPC under the hood — you don't need to know anything about it. The Python client handles it for you. If you see gRPC in an error message, it's a connection issue, not a code issue.
+
 ### Supported platforms
 
-- The VectorAI DB Docker image is currently fully supported on Linux/amd64 (x86_64) and works on Apple Silicon machines using Docker Desktop.
-- The Python client package is supported on all major platforms (Windows, macOS, and Linux).
+* The VectorAI DB Docker image is currently supported only on Linux/amd64 (x86_64).
+    * Supported on Windows using WSL2 (Docker Desktop or Podman Desktop).
+    * macOS support on Apple chipsets (M2/M3/M4) through Rosetta 2 and specifying linux/amd64 as platform. 
+        * Install Rosetta 2 by running `softwareupdate --install-rosetta --agree-to-license`.
+        * Add `--platform linux/amd64` to Docker commands.
+
+* The Python client package is supported on all major platforms (Windows, macOS, and Linux).
+    * Python 3.10 or higher is required.
 
 ## Features
 
@@ -62,6 +80,13 @@ docker image load -i Actian_VectorAI_DB_Beta.tar
 ### Container ports and volumes
 
 The container exposes port `50051` and stores its logs and persisted collections in the `/data` directory, which you should map to a host directory to persist data outside the container.
+
+**Port conflict?** If port `50051` is already in use, change the host port in the compose file:
+```yaml
+ports:
+  - "50052:50051"  # Use any free port on the left side
+```
+Then connect with `CortexClient("localhost:50052")`.
 
 ### Deploy container with Docker run
 
@@ -191,6 +216,21 @@ asyncio.run(main())
 ```
 
 **Note:** To use the sync `CortexClient` in async contexts (e.g., MCP servers, FastAPI), wrap calls with `asyncio.to_thread()`. For fully async code, use `AsyncCortexClient` instead.
+
+## What Can I Do With Retrieved Vectors?
+
+Once you retrieve results, the `payload` is where your real data lives. Some ideas:
+- **RAG:** Feed the retrieved text chunks into an LLM (OpenAI, Ollama, etc.) as context
+- **Recommendations:** Use the returned IDs to look up items in your own database
+- **Anomaly detection:** Flag results whose `score` falls below a similarity threshold
+- **Note-taking / personal search:** Store notes as vectors, search them by meaning later
+
+Results look like this:
+```python
+for result in results:
+    print(result.score)    # similarity score
+    print(result.payload)  # your original data, e.g. {"text": "...", "source": "..."}
+```
 
 ## 📚 Core API
 
