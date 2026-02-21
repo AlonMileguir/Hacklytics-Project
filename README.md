@@ -89,6 +89,22 @@ Pick a model, embed your data, store the vectors in VectorAI DB. All models belo
    docker compose down
 ```
 
+## Setup for M1 Macbook Users
+
+**Step 1:** Clone repo from GitHub
+
+**Step 2:** Have Docker Desktop running
+
+**Step 3:** Run `docker compose up` in the root folder of the db. **Note:** you might encounter a platform incompatibility warning, you can ignore that
+
+**Step 4:** In a new terminal window in the same folder make the Python virtual environment using `python3.11 -m venv .venv`
+
+**Step 5:** Run `source .venv/bin/activate` to activate virtual environment
+
+**Step 6:** Run `pip install ./actiancortex-0.1.0b1-py3-none-any.whl` to install the VectorAI DB Python client from the bundled wheel file
+
+**Step 7:** Validate by running `PYTHONPATH=. python examples/quick-start.py`
+
 ## 📥 Docker container installation – with the .tar image file (not included in this repository)
 
 Load the container archive into your container environment:
