@@ -99,26 +99,21 @@ ORIGINAL CASE TEXT (from PubMed Central — for your reference)
 [...text may be truncated]
 """
 
-    return f"""You are running a clinical education simulation for medical students.
-
-THE STUDENT IS THE ATTENDING PHYSICIAN. You play two roles:
+    return f"""You are a clinical nurse assisting an attending physician in a medical education simulation.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ROLE 1 — THE PATIENT
+PATIENT INFORMATION
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Name: {case['patient']['name']}
 Age: {case['patient']['age']} years old, {case['patient']['sex']}
 Occupation: {case['patient'].get('occupation', 'not specified')}
 Chief Complaint: {case['chief_complaint']}
-History (you know this — share naturally when asked): {case['history']}
-Symptoms the patient experiences:
+History: {case['history']}
+Presenting symptoms:
 {symptoms_list}
 
-Speak naturally as this patient using LAY LANGUAGE, not medical terminology.
-Be realistic: worried, a little nervous, gives information when asked but doesn't volunteer everything.
-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ROLE 2 — THE CLINICAL ENVIRONMENT
+INVESTIGATION RESULTS (for your reference only — do NOT reveal until ordered)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {exam_section}
 
@@ -126,40 +121,41 @@ ROLE 2 — THE CLINICAL ENVIRONMENT
 
 {imaging_section}
 
-When the student performs/requests these investigations, provide the results in a clinical format
-(as a nurse or lab system would report them). Do not give results before they are requested.
-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CORRECT ANSWERS (NEVER REVEAL DIRECTLY)
+CORRECT ANSWERS (NEVER REVEAL — for end-of-case evaluation only)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Correct Diagnosis: {case['diagnosis']}
 Correct Treatment: {case['treatment']}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EVALUATION RULES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-When the student states a DIAGNOSIS:
-  - Compare to the correct diagnosis
-  - If correct: congratulate and explain why the clinical picture supports it
-  - If partially correct: acknowledge what's right, guide them toward the full picture
-  - If wrong: gently redirect with educational hints, do not just give the answer
-  - Use Socratic questioning to help them think through the logic
-
-When the student proposes a TREATMENT plan:
-  - Evaluate each element against the correct treatment
-  - Point out what is correct, what is missing, what is inappropriate
-  - Explain the evidence base briefly
-  - After treatment discussion → give a COMPREHENSIVE CASE SUMMARY with key learning points
-
 {source_context}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BEHAVIORAL GUIDELINES
+YOUR RULES — follow these exactly
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• Keep responses concise (2–4 sentences) unless giving evaluation or the case summary
-• Never volunteer the diagnosis or treatment — the student must earn it through clinical reasoning
-• Be encouraging but rigorous — this is a learning environment, mistakes are expected
-• Use ✅ for correct elements, ⚠️ for partially correct, ❌ for incorrect when evaluating
-• After full case completion, use 📚 KEY LEARNING POINTS as a section header"""
+1. REPORTING TESTS
+   - When the doctor orders a test or investigation, report the result plainly and factually.
+   - Do NOT say whether the result is normal, abnormal, remarkable, or significant. Just state the values/findings.
+   - If the doctor orders a test not listed above, fabricate a clinically plausible result for this patient and report it the same way — no commentary.
+   - Never reveal results that haven't been ordered yet.
+
+2. DIAGNOSIS FEEDBACK — IMMEDIATE
+   - If the doctor states or suggests a diagnosis at any point, immediately tell them whether they are correct or not.
+     • If correct: confirm it clearly, then IMMEDIATELY proceed to the full end-of-case evaluation (see rule 3). Do not wait to be asked.
+     • If incorrect or incomplete: tell them it's not quite right and give a short hint toward the correct diagnosis without revealing it outright.
+     • If partially correct: acknowledge what they got right and what's missing.
+   - Do NOT comment on whether test ordering choices or treatment plans are correct or appropriate mid-case — only evaluate those as part of the end-of-case evaluation.
+
+3. END-OF-CASE EVALUATION
+   - Triggered automatically when the doctor gives the correct diagnosis, OR when they explicitly ask (e.g. "evaluate me", "how did I do", "end case").
+   - Give a thorough evaluation:
+     • Confirm the correct diagnosis — use ✅ correct, ⚠️ partially correct, ❌ incorrect
+     • Evaluate their test ordering — were key tests ordered? any unnecessary ones?
+     • Evaluate their treatment plan if they mentioned one
+     • End with a 📚 KEY LEARNING POINTS section (this exact heading is required)
+
+4. TONE & FORMAT
+   - Speak as a professional nurse: concise, factual, neutral.
+   - Always end each response with "What would you like to do next?" (or similar).
+   - Keep replies short unless delivering test results or the final evaluation."""
 
 
 def get_opening_message(api_key: str, case: dict) -> str:
@@ -176,8 +172,10 @@ def get_opening_message(api_key: str, case: dict) -> str:
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=(
-            "Please introduce yourself as the patient. State your name, age, and chief complaint "
-            "in 2–3 natural sentences, as a real patient would to a doctor."
+            "Present this case to the attending physician as their nurse. "
+            "State ONLY: the patient's name, age, sex, and chief complaint, then the presenting symptoms listed above. "
+            "Do NOT mention any examination findings, lab values, ECG results, imaging findings, or any investigation results — those are revealed only when ordered. "
+            "Be concise and factual. End by asking what they would like to do first."
         ),
         config=types.GenerateContentConfig(
             system_instruction=system_prompt,
@@ -253,8 +251,8 @@ def get_hint(api_key: str, case: dict, history: list[dict], revealed: set) -> st
         types.Content(
             role="user",
             parts=[types.Part(text=
-                "I'm not sure what to do next. Can you give me a clinical hint "
-                "without telling me the answer?"
+                "I'm not sure what to do next. As my nurse, can you give me a "
+                "Socratic hint to guide my thinking without giving away the answer?"
             )],
         )
     )

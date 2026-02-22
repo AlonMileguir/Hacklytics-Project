@@ -2,7 +2,8 @@
 # Install with: pip install -r app/requirements_medical.txt
 
 # Web application
-streamlit>=1.32.0
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
 
 # Gemini LLM + embeddings (clinical simulation + case search)
 google-genai>=1.0.0

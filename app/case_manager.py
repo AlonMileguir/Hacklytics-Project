@@ -204,6 +204,47 @@ def index_all_cases(api_key: str, db_server: str = "localhost:50051"):
         print(f"Indexed {len(cases)} cases.")
 
 
+def index_case_images(db_server: str = "localhost:50051") -> int:
+    """
+    Encode all case images with BiomedCLIP and store in the medical_images VectorAI collection.
+    Stores case_id in metadata so image search results can be mapped back to cases.
+    Safe to re-run — re-indexes all available images.
+
+    Returns number of images successfully indexed.
+    Requires: pip install open_clip_torch torch pillow
+    """
+    try:
+        from app.medical_image_encoder import MedicalImageEncoder, setup_collection
+        from cortex import CortexClient
+    except ImportError as e:
+        print(f"BiomedCLIP not available: {e}")
+        return 0
+
+    cases   = get_all_cases()
+    encoder = MedicalImageEncoder(db_address=db_server)
+
+    total = 0
+    with CortexClient(db_server) as client:
+        setup_collection(client)
+        for i, case in enumerate(cases):
+            img_path = get_case_image_path(case)
+            if not img_path or not img_path.exists():
+                continue
+            try:
+                encoder.store_image(
+                    client,
+                    image_id=i,
+                    image_path=str(img_path),
+                    metadata={"case_id": case["id"]},
+                )
+                total += 1
+            except Exception as e:
+                print(f"  Failed {case['id']}: {e}")
+
+    print(f"Indexed {total} case images with BiomedCLIP.")
+    return total
+
+
 def search_cases(
     api_key: str,
     query: str,
