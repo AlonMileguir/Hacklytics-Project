@@ -1118,6 +1118,7 @@ async function refreshPanelFromHistory() {
         panel.imaging = [{
           type:     S.revealed.imaging.type || (S.activeCase && S.activeCase.imaging_type) || 'Imaging',
           findings: S.revealed.imaging.description || '',
+          has_image: S.revealed.imaging.has_image,
         }];
       }
       renderPanel(panel);
@@ -1160,7 +1161,13 @@ function renderPanel(p) {
       </div>`;
   }
   for (const img of imaging) {
-    const imgHtml = S.activeCase
+    // has_image is explicit when injected from S.revealed; fall back to S.revealed check
+    // for Gemini-extracted entries where it's undefined.
+    const hasImage = img.has_image !== undefined
+      ? img.has_image
+      : !!(S.revealed && S.revealed.imaging && S.revealed.imaging.has_image);
+
+    const imgHtml = (S.activeCase && hasImage)
       ? `<img src="/api/image/${S.activeCase.id}" class="panel-img" alt="${escHtml(img.type)}"
            onclick="window.open(this.src,'_blank')"
            onerror="this.style.display='none'">`
