@@ -1,0 +1,26 @@
+# Secrets — never bake credentials into the image; pass them as env vars at runtime
+.env
+
+# Python cache
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Git history
+.git/
+.gitignore
+
+# Uploaded files (mount as volume in production)
+uploads/
+
+# IDE / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

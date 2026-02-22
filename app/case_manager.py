@@ -94,23 +94,34 @@ def get_unique_difficulties() -> list[str]:
 # Image path resolution
 # ---------------------------------------------------------------------------
 
+_MULTICARE_IMG_ROOT = ROOT / "data" / "multicare_raw" / "medcase_subset" / "images"
+
+
 def get_case_image_path(case: dict) -> Optional[Path]:
     """
     Resolve the image for a case.
 
     Priority:
-      1. case["imaging_path"]  — direct file path (MultiCaRe cases)
-      2. MedMNIST download dir — data/<imaging_dataset>/<imaging_label>/
+      1. case["imaging_path"]  — direct file path
+      2. multicare_raw images  — search for PMC-ID-prefixed files (.webp/.jpg/.png)
+      3. MedMNIST download dir — data/<imaging_dataset>/<imaging_label>/
          (hardcoded demo cases)
     """
-    # 1. Direct path (MultiCaRe)
+    # 1. Direct path
     direct = case.get("imaging_path")
     if direct:
         p = Path(direct)
         if p.exists():
             return p
 
-    # 2. MedMNIST folder (demo cases)
+    # 2. MultiCaRe raw images: filename starts with the PMC article ID
+    pmc_id = case["id"].split("_")[0]  # e.g. "PMC11148442"
+    if _MULTICARE_IMG_ROOT.exists():
+        matches = sorted(_MULTICARE_IMG_ROOT.rglob(f"{pmc_id}_*"))
+        if matches:
+            return matches[0]
+
+    # 3. MedMNIST folder (demo cases)
     dataset = case.get("imaging_dataset")
     label   = case.get("imaging_label")
     if dataset and label:

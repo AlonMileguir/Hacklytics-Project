@@ -118,6 +118,24 @@ def _case_meta(case: dict) -> dict:
     }
 
 
+_GENERIC_IMAGING = {"medical imaging", "not available", "imaging", "", "none"}
+
+
+def _image_is_usable(case: dict) -> bool:
+    """
+    Return True only when the case has a real image file AND an imaging type
+    specific enough that the file is likely to match what the nurse describes.
+    MultiCaRe cases with generic 'Medical imaging' type have arbitrary PMC
+    article figures that may be histology slides, diagrams, etc. — not the
+    modality the nurse describes — so we suppress them.
+    """
+    imaging_type = case.get("imaging_type", "").strip().lower()
+    if imaging_type in _GENERIC_IMAGING:
+        return False
+    img_path = get_case_image_path(case)
+    return bool(img_path and img_path.exists())
+
+
 def _revealed_data(case: dict, revealed: set) -> dict:
     data = {}
     if "exam" in revealed:
@@ -125,11 +143,10 @@ def _revealed_data(case: dict, revealed: set) -> dict:
     if "labs" in revealed:
         data["labs"] = case.get("labs", "")
     if "imaging" in revealed:
-        img_path = get_case_image_path(case)
         data["imaging"] = {
             "type":        case.get("imaging_type", "Imaging"),
             "description": case.get("imaging_description", ""),
-            "has_image":   bool(img_path and img_path.exists()),
+            "has_image":   _image_is_usable(case),
         }
     return data
 
@@ -324,10 +341,8 @@ def chat(req: ChatReq):
     newly_revealed  = _revealed_data(case, delta)
 
     image_url = None
-    if "imaging" in delta:
-        img_path = get_case_image_path(case)
-        if img_path and img_path.exists():
-            image_url = f"/api/image/{case['id']}"
+    if "imaging" in delta and _image_is_usable(case):
+        image_url = f"/api/image/{case['id']}"
 
     return {
         "response":       reply,

@@ -980,11 +980,11 @@ async function send(overrideText) {
   } catch (err) {
     removeLoading(loadId);
     appendMsg('ai', 'Something went wrong. Please try again.');
+  } finally {
+    S.busy = false;
+    sendBtn.disabled = false;
+    inputEl.focus();
   }
-
-  S.busy = false;
-  sendBtn.disabled = false;
-  inputEl.focus();
 }
 
 // ── Message rendering ─────────────────────────────────────────────────────
@@ -1288,9 +1288,9 @@ async function runTextSearch() {
     setFinderStatus(data.cases?.length ? `${data.cases.length} cases found` : 'No results found.');
   } catch (e) {
     setFinderStatus('Search failed. Please try again.');
+  } finally {
+    document.getElementById('finder-search-btn').disabled = false;
   }
-
-  document.getElementById('finder-search-btn').disabled = false;
 }
 
 async function handleImageUpload(file, mode) {
@@ -1326,8 +1326,9 @@ async function handleImageUpload(file, mode) {
     } catch (e) {
       removeLoading(loadId);
       appendMsg('ai', 'Image upload failed. Please try again.');
+    } finally {
+      S.busy = false; sendBtn.disabled = false;
     }
-    S.busy = false; sendBtn.disabled = false;
   }
 }
 
@@ -1391,9 +1392,9 @@ async function startSpecificCase(caseId) {
   } catch (e) {
     removeLoading(loadId);
     appendMsg('ai', 'Could not start that case. Please try again.');
+  } finally {
+    S.busy = false; sendBtn.disabled = false;
   }
-
-  S.busy = false; sendBtn.disabled = false;
 }
 
 function setFinderStatus(msg) {
