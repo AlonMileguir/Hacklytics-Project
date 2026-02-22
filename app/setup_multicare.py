@@ -232,8 +232,10 @@ def build_cases(api_key: str, mdc, max_cases: int) -> list[dict]:
         case_text = str(row["case_text"])
 
         # Find images for this case
-        if "patient_id" in image_df.columns:
-            case_imgs = image_df[image_df["patient_id"] == case_id]
+        if "case_id" in image_df.columns:
+            case_imgs = image_df[image_df["case_id"].astype(str) == case_id]
+        elif "patient_id" in image_df.columns:
+            case_imgs = image_df[image_df["patient_id"].astype(str) == case_id]
         else:
             case_imgs = pd.DataFrame()
 
