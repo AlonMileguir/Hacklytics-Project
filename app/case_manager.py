@@ -6,10 +6,10 @@ Case sources (in priority order):
      Run  python app/setup_multicare.py --api-key KEY  to generate this.
   2. app/cases_data.py          — Hardcoded demo cases (always available as fallback)
 
-Cases are embedded using Gemini text-embedding-004 (768d) for semantic search.
+Cases are embedded using gemini-embedding-001 (3072d) for semantic search.
 
 Collections:
-  medical_cases  (768d, COSINE) — case text embeddings
+  medical_cases  (3072d, COSINE) — case text embeddings
 """
 
 import sys
@@ -26,7 +26,7 @@ from cortex import CortexClient, DistanceMetric
 from app.cases_data import CASES as HARDCODED_CASES
 
 CASES_COLLECTION    = "medical_cases"
-CASES_DIMENSION     = 768        # Gemini text-embedding-004
+CASES_DIMENSION     = 3072        # gemini-embedding-001
 MULTICARE_JSON      = ROOT / "data" / "multicare_cases.json"
 
 
