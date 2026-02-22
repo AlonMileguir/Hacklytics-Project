@@ -8,6 +8,7 @@ Run with:
 import sys
 import os
 import random
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -20,18 +21,21 @@ try:
 except ImportError:
     pass
 
+from cortex import Filter
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.case_manager import (
+    CASES_COLLECTION,
     get_all_cases,
     get_case_by_id,
     get_case_image_path,
     filter_cases,
     search_cases,
     is_cases_indexed,
+    index_all_cases,
     index_case_images,
 )
 from app.clinical_sim import (
@@ -47,6 +51,31 @@ STATIC_DIR   = ROOT / "app" / "static"
 STATIC_DIR.mkdir(exist_ok=True)
 
 app = FastAPI()
+
+
+def _background_index():
+    """Index cases into VectorAI DB on startup (skipped if already indexed)."""
+    if not API_KEY:
+        return
+    try:
+        from cortex import CortexClient
+        with CortexClient("localhost:50051") as c:
+            if is_cases_indexed(c):
+                print("[index] Cases already indexed — skipping.")
+                return
+    except Exception as e:
+        print("[index] VectorAI DB not reachable — skipping case indexing.")
+        return
+    print("[index] Indexing cases into VectorAI DB…")
+    try:
+        index_all_cases(API_KEY)
+        print("[index] Case indexing complete.")
+    except Exception as e:
+        print(f"[index] Case indexing failed: {e}")
+
+
+threading.Thread(target=_background_index, daemon=True).start()
+
 
 # ---------------------------------------------------------------------------
 # In-memory sessions
@@ -162,6 +191,7 @@ def _find_case(query: str) -> dict:
                 if cases:
                     return cases[0]
     except Exception:
+        print("Vector search failed, falling back to Gemini ranking")
         pass
 
     # 2. Use Gemini to intelligently pick the best case
@@ -209,47 +239,9 @@ def _gemini_pick_case(query: str) -> dict:
     return random.choice(all_cases)
 
 
-def _gemini_rank_cases(query: str, top_k: int = 8) -> list[dict]:
-    """Ask Gemini to rank the top-k cases by relevance to a query."""
-    import re
-    from google import genai
-
-    all_cases = get_all_cases()
-    if not all_cases:
-        return []
-
-    summaries = []
-    for i, c in enumerate(all_cases):
-        p = c.get("patient", {})
-        summaries.append(
-            f"{i}: {c.get('title', '')} | sex={p.get('sex','?')} age={p.get('age','?')} "
-            f"| {c.get('specialty', '')} | {c.get('chief_complaint', '')}"
-        )
-
-    prompt = (
-        f'Medical student searching for cases matching: "{query}"\n\n'
-        f"Available cases:\n" + "\n".join(summaries) +
-        f"\n\nReturn the indices of the {top_k} most relevant cases as comma-separated "
-        "numbers from most to least relevant. ONLY output numbers separated by commas."
-    )
-
-    client  = genai.Client(api_key=API_KEY)
-    response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-
-    indices = [int(m.group()) for m in re.finditer(r"\d+", response.text)]
-    scores  = [100, 90, 82, 75, 68, 62, 57, 53]
-
-    seen, results = set(), []
-    for i, idx in enumerate(indices):
-        if 0 <= idx < len(all_cases) and idx not in seen:
-            seen.add(idx)
-            c = dict(all_cases[idx])
-            c["_score"] = scores[i] if i < len(scores) else 50
-            results.append(c)
-        if len(results) >= top_k:
-            break
-
-    return results
+def _vector_search_cases(query: str, top_k: int = 10) -> list[dict]:
+    """Semantic search via VectorAI DB (Gemini embeddings) with keyword fallback."""
+    return search_cases(API_KEY, query, top_k=top_k, db_server="localhost:50051")
 
 
 # ---------------------------------------------------------------------------
@@ -480,13 +472,19 @@ class SearchReq(BaseModel):
 
 @app.post("/api/search-cases")
 def search_cases_api(req: SearchReq):
-    """Return top 8 cases ranked by relevance to a text query."""
+    """Return top 10 cases ranked by relevance to a text query.
+
+    Strategy:
+      1. VectorAI DB semantic search (Gemini embeddings) — if cases are indexed
+      2. Gemini LLM ranking — fallback
+    """
     if not API_KEY:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY not set")
-    results = _gemini_rank_cases(req.query)
+
+    results = _vector_search_cases(req.query, 10)
     return {
         "cases": [
-            {**_case_meta(c), "score": c.get("_score", 80)}
+            {**_case_meta(c), "score": c.get("_score", 50)}
             for c in results
         ]
     }
@@ -529,17 +527,17 @@ async def search_by_image_api(file: UploadFile = File(...)):
             finally:
                 tmp_path.unlink(missing_ok=True)
 
-            score_map = [100, 90, 82, 75, 68, 62, 57, 53]
             cases, seen = [], set()
-            for i, r in enumerate(results):
+            for r in results:
                 case_id = r.payload.get("case_id")
                 if case_id and case_id not in seen:
                     case = get_case_by_id(case_id)
                     if case:
                         seen.add(case_id)
                         c = dict(case)
-                        c["_score"] = score_map[i] if i < len(score_map) else 50
+                        c["_score"] = round(r.score * 100, 1)
                         cases.append(c)
+            cases.sort(key=lambda c: c["_score"], reverse=True)
 
             if cases:
                 return {
@@ -566,11 +564,14 @@ async def search_by_image_api(file: UploadFile = File(...)):
         ],
     )
     description = vision_resp.text
-    results     = _gemini_rank_cases(description)
+    results     = _vector_search_cases(description)
 
     return {
         "description": description,
-        "cases": [{**_case_meta(c), "score": c.get("_score", 80)} for c in results],
+        "cases": [
+            {**_case_meta(c), "score": c.get("_score", 50)}
+            for c in results
+        ],
     }
 
 

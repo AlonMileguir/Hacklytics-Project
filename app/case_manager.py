@@ -17,6 +17,7 @@ import json
 import random
 from pathlib import Path
 from typing import Optional
+from xml.parsers.expat import model
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
@@ -159,9 +160,13 @@ def is_cases_indexed(client: CortexClient) -> bool:
 
 def _embed_text(api_key: str, text: str) -> list[float]:
     from google import genai
-    client = genai.Client(api_key=api_key)
-    result = client.models.embed_content(model="text-embedding-004", contents=text)
-    return list(result.embeddings[0].values)
+    try:
+        client = genai.Client(api_key=api_key)
+        result = client.models.embed_content(model="gemini-embedding-001", contents=text)
+        return list(result.embeddings[0].values)
+    except Exception as e:
+        print(f"Embedding with model gemini-embedding-001 failed: {e}")
+        raise RuntimeError("No Gemini embedding model available — check your API key")
 
 
 def _case_payload(case: dict) -> dict:
@@ -178,6 +183,7 @@ def _case_payload(case: dict) -> dict:
         "diagnosis":   case.get("diagnosis", ""),
         "description": case.get("description", ""),
         "source":      case.get("source", "demo"),
+        "clinical_text": case.get("clinical_text", ""),
     }
 
 
@@ -190,28 +196,20 @@ def index_all_cases(api_key: str, db_server: str = "localhost:50051"):
 
     with CortexClient(db_server) as client:
         setup_cases_collection(client)
-
+        
         if is_cases_indexed(client):
             print(f"Cases already indexed ({client.count(CASES_COLLECTION)} in DB).")
             return
 
         print(f"Indexing {len(cases)} cases into VectorAI DB…")
-        ids, vectors, payloads = [], [], []
 
         for i, case in enumerate(cases):
-            embed_text = (
-                f"{case['title']}. Specialty: {case.get('specialty', '')}. "
-                f"Difficulty: {case.get('difficulty', '')}. "
-                f"Chief complaint: {case.get('chief_complaint', '')}. "
-                f"{case.get('description', '')}"
-            )
-            print(f"  [{i + 1}/{len(cases)}] {case['title'][:60]}")
+            embed_text = case.get("clinical_text")
             vec = _embed_text(api_key, embed_text)
-            ids.append(i)
-            vectors.append(vec)
-            payloads.append(_case_payload(case))
+            payload = _case_payload(case)
+            client.upsert(CASES_COLLECTION, id=i, vector=vec, payload=payload)
 
-        client.batch_upsert(CASES_COLLECTION, ids, vectors, payloads)
+        client.flush(CASES_COLLECTION)
         print(f"Indexed {len(cases)} cases.")
 
 
@@ -277,19 +275,34 @@ def search_cases(
                 top_k=top_k,
                 with_payload=True,
             )
+
         matched = []
         for r in results:
             case = get_case_by_id(r.payload["case_id"])
             if case:
-                matched.append(case)
+                c = dict(case)
+                c["_score"] = round(r.score * 100, 1)
+                matched.append(c)
+        matched.sort(key=lambda c: c["_score"], reverse=True)
         return matched
-    except Exception:
-        # Keyword fallback
+    except Exception as e:
+        print(f"Error in search_cases: {e}")
+        # Keyword fallback — score by number of fields that match the query
         q = query.lower()
-        return [
-            c for c in get_all_cases()
-            if q in c.get("title", "").lower()
-            or q in c.get("specialty", "").lower()
-            or q in c.get("chief_complaint", "").lower()
-            or q in c.get("description", "").lower()
-        ][:top_k] or get_all_cases()[:top_k]
+        scored = []
+        for c in get_all_cases():
+            hits = sum([
+                q in c.get("title", "").lower(),
+                q in c.get("specialty", "").lower(),
+                q in c.get("chief_complaint", "").lower(),
+                q in c.get("description", "").lower(),
+            ])
+            if hits:
+                case = dict(c)
+                case["_score"] = round(hits / 4 * 100, 1)
+                scored.append(case)
+        scored.sort(key=lambda c: c["_score"], reverse=True)
+        if scored:
+            return scored[:top_k]
+        # No keyword match — return first top_k cases with a low score
+        return [{**c, "_score": 10.0} for c in get_all_cases()[:top_k]]

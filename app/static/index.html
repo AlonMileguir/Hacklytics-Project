@@ -164,6 +164,25 @@
     }
     .btn-similar:hover { background: #6a7da0; }
 
+    /* ── Case divider ────────────────────────────────────────────────────── */
+    .case-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 24px 0 20px;
+      color: #c0c0c0;
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .case-divider::before,
+    .case-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #e8e8e8;
+    }
+
     /* ── Input area ──────────────────────────────────────────────────────── */
     #input-area {
       width: 100%;
@@ -905,7 +924,7 @@ inputEl.addEventListener('input', () => {
   inputEl.style.height = 'auto';
   inputEl.style.height = Math.min(inputEl.scrollHeight, 130) + 'px';
 });
-sendBtn.addEventListener('click', send);
+sendBtn.addEventListener('click', () => send());
 
 // File upload via paperclip
 document.getElementById('img-file').addEventListener('change', e => {
@@ -927,10 +946,10 @@ document.getElementById('finder-query').addEventListener('keydown', e => {
 
 // ── Core send ─────────────────────────────────────────────────────────────
 async function send(overrideText) {
-  const text = (overrideText ?? inputEl.value).trim();
+  const text = (typeof overrideText === 'string' ? overrideText : inputEl.value).trim();
   if (!text || S.busy) return;
 
-  if (!overrideText) {
+  if (typeof overrideText !== 'string') {
     inputEl.value = '';
     inputEl.style.height = 'auto';
   }
@@ -957,6 +976,10 @@ async function send(overrideText) {
     if (data.detail) {
       appendMsg('ai', '⚠️ ' + data.detail);
     } else {
+      if (data.case && S.activeCase && S.activeCase.id !== data.case.id) {
+        appendCaseDivider();
+      }
+
       appendMsg('ai', data.response, data.image_url);
 
       if (data.case) {
@@ -1058,6 +1081,13 @@ function appendSimilarBtn() {
   </div>`;
   document.getElementById('messages').appendChild(wrap);
   scrollBottom();
+}
+
+function appendCaseDivider() {
+  const el = document.createElement('div');
+  el.className = 'case-divider';
+  el.textContent = 'New case';
+  document.getElementById('messages').appendChild(el);
 }
 
 function scrollBottom() {
@@ -1231,6 +1261,7 @@ async function skipCase() {
 
 async function studySimilar() {
   hideWelcome();
+  if (S.activeCase) appendCaseDivider();
   const loadId = appendLoading('Finding a similar case…');
 
   try {
@@ -1369,6 +1400,7 @@ function renderFinderResults(cases) {
 async function startSpecificCase(caseId) {
   setMode('practice');
   hideWelcome();
+  if (S.activeCase) appendCaseDivider();
   const loadId = appendLoading('Starting case…');
   S.busy = true; sendBtn.disabled = true;
 
