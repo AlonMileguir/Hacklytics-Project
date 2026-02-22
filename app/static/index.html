@@ -1205,6 +1205,8 @@
             if (!document.getElementById('right-panel').classList.contains('visible')) {
               showPanel();
             }
+          } else if (data.complete) {
+            S.activeCase = null;
           }
 
           // Keep client-side revealed state in sync so panel can use it
@@ -1214,6 +1216,10 @@
             S.complete = true;
             appendSimilarBtn();
             document.getElementById('panel-actions').style.display = 'none';
+            // Clear session ID from localStorage so next message creates a fresh session
+            localStorage.removeItem('medcase_sid');
+            S.sessionId = crypto.randomUUID();
+            localStorage.setItem('medcase_sid', S.sessionId);
           }
 
           if (S.activeCase) refreshPanelFromHistory();

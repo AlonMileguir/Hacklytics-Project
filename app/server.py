@@ -342,7 +342,7 @@ def chat(req: ChatReq):
 
     return {
         "response":       reply,
-        "case":           _case_meta(case),
+        "case":           None if complete else _case_meta(case),
         "revealed":       _revealed_data(case, new_revealed),
         "newly_revealed": newly_revealed,
         "complete":       complete,
