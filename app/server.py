@@ -329,6 +329,10 @@ def chat(req: ChatReq):
     complete        = is_case_complete(sess["history"])
     sess["complete"] = complete
 
+    # Clear the case when complete, to allow starting a new case on next message
+    if complete:
+        sess["case"] = None
+
     delta           = new_revealed - prev_revealed
     newly_revealed  = _revealed_data(case, delta)
 
