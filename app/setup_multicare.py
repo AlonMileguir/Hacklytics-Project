@@ -97,7 +97,7 @@ def download_multicare(specialty: str, dataset_name: str) -> object:
         # Reconstruct file paths for images
         image_meta_path = dataset_path / "image_metadata.json"
         if image_meta_path.exists():
-            mdc.filtered_image_metadata_df = pd.read_json(image_meta_path)
+            mdc.filtered_image_metadata_df = pd.read_json(image_meta_path, lines=True)
             mdc.filtered_image_metadata_df["file_path"] = mdc.filtered_image_metadata_df["file"].apply(
                 lambda x: str(dataset_path / "images" / x[:4] / x[:5] / x)
             )
@@ -222,6 +222,13 @@ def build_cases(api_key: str, mdc, max_cases: int) -> list[dict]:
         pmcid    = str(row["pmcid"])
         gender   = str(row.get("gender", "unknown")).lower()
         age      = row.get("age", None)
+        if pd.isna(age):
+            age_str = "Unknown"
+        else:
+            try:
+                age_str = str(int(float(age)))
+            except (TypeError, ValueError):
+                age_str = "Unknown"
         case_text = str(row["case_text"])
 
         # Find images for this case
@@ -260,7 +267,7 @@ def build_cases(api_key: str, mdc, max_cases: int) -> list[dict]:
             "difficulty": extracted["difficulty"],
             "patient": {
                 "name":       "Patient",   # anonymised — real name not in dataset
-                "age":        age if age is not None else "Unknown",
+                "age":        age_str,
                 "sex":        gender,
                 "occupation": "Not specified",
             },
