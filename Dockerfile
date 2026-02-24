@@ -21,7 +21,6 @@ RUN pip install --no-cache-dir actiancortex-0.1.0b1-py3-none-any.whl --break-sys
 # ── Install app Python dependencies ──────────────────────────────────────────
 COPY app/requirements_medical.txt ./requirements_medical.txt
 RUN pip install --no-cache-dir -r requirements_medical.txt --break-system-packages
-RUN pip3 install --no-cache-dir python-multipart --break-system-packages
 
 # ── Copy application code and static assets ──────────────────────────────────
 COPY app/ app/
@@ -39,5 +38,8 @@ EXPOSE 80
 # ── Startup script ────────────────────────────────────────────────────────────
 COPY docker-startup.sh /docker-startup.sh
 RUN chmod +x /docker-startup.sh
+
+ARG GEMINI_API_KEY
+ENV GEMINI_API_KEY=${GEMINI_API_KEY}
 
 ENTRYPOINT ["/docker-startup.sh"]

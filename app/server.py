@@ -22,7 +22,7 @@ except ImportError:
     pass
 
 from cortex import Filter
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -31,12 +31,10 @@ from app.case_manager import (
     CASES_COLLECTION,
     get_all_cases,
     get_case_by_id,
-    get_case_image_path,
     filter_cases,
     search_cases,
     is_cases_indexed,
     index_all_cases,
-    index_case_images,
 )
 from app.clinical_sim import (
     get_opening_message,
@@ -103,18 +101,6 @@ def _assign_random_name(case: dict) -> dict:
     return case
 
 
-_biomed_encoder = None
-
-
-def _get_biomed_encoder():
-    """Lazy-load BiomedCLIP encoder (downloads ~350 MB on first run, then cached)."""
-    global _biomed_encoder
-    if _biomed_encoder is None:
-        from app.medical_image_encoder import MedicalImageEncoder
-        _biomed_encoder = MedicalImageEncoder()
-    return _biomed_encoder
-
-
 def _new_session() -> dict:
     return {
         "case":     None,
@@ -147,24 +133,6 @@ def _case_meta(case: dict) -> dict:
     }
 
 
-_GENERIC_IMAGING = {"medical imaging", "not available", "imaging", "", "none"}
-
-
-def _image_is_usable(case: dict) -> bool:
-    """
-    Return True only when the case has a real image file AND an imaging type
-    specific enough that the file is likely to match what the nurse describes.
-    MultiCaRe cases with generic 'Medical imaging' type have arbitrary PMC
-    article figures that may be histology slides, diagrams, etc. — not the
-    modality the nurse describes — so we suppress them.
-    """
-    imaging_type = case.get("imaging_type", "").strip().lower()
-    if imaging_type in _GENERIC_IMAGING:
-        return False
-    img_path = get_case_image_path(case)
-    return bool(img_path and img_path.exists())
-
-
 def _revealed_data(case: dict, revealed: set) -> dict:
     data = {}
     if "exam" in revealed:
@@ -175,7 +143,7 @@ def _revealed_data(case: dict, revealed: set) -> dict:
         data["imaging"] = {
             "type":        case.get("imaging_type", "Imaging"),
             "description": case.get("imaging_description", ""),
-            "has_image":   _image_is_usable(case),
+            "has_image":   False,
         }
     return data
 
@@ -271,17 +239,6 @@ def login(req: LoginReq):
     raise HTTPException(status_code=401, detail="Invalid password")
 
 
-@app.get("/api/image/{case_id}")
-def case_image(case_id: str):
-    case = get_case_by_id(case_id)
-    if not case:
-        raise HTTPException(status_code=404)
-    img_path = get_case_image_path(case)
-    if not img_path or not img_path.exists():
-        raise HTTPException(status_code=404)
-    return FileResponse(str(img_path))
-
-
 class ChatReq(BaseModel):
     session_id: str
     message: str
@@ -311,7 +268,6 @@ def chat(req: ChatReq):
             "revealed":       {},
             "newly_revealed": {},
             "complete":       False,
-            "image_url":      None,
         }
 
     # ── Active simulation ──────────────────────────────────────────────────
@@ -336,17 +292,12 @@ def chat(req: ChatReq):
     delta           = new_revealed - prev_revealed
     newly_revealed  = _revealed_data(case, delta)
 
-    image_url = None
-    if "imaging" in delta and _image_is_usable(case):
-        image_url = f"/api/image/{case['id']}"
-
     return {
         "response":       reply,
         "case":           None if complete else _case_meta(case),
         "revealed":       _revealed_data(case, new_revealed),
         "newly_revealed": newly_revealed,
         "complete":       complete,
-        "image_url":      image_url,
     }
 
 
@@ -466,7 +417,6 @@ def similar_case(req: SessionReq):
         "revealed":       {},
         "newly_revealed": {},
         "complete":       False,
-        "image_url":      None,
     }
 
 
@@ -492,105 +442,6 @@ def search_cases_api(req: SearchReq):
             for c in results
         ]
     }
-
-
-@app.post("/api/search-by-image")
-async def search_by_image_api(file: UploadFile = File(...)):
-    """
-    Accept a medical image and return top 8 matching cases.
-
-    Strategy (in order):
-      1. BiomedCLIP vector search — if images are indexed in VectorAI DB
-      2. Gemini vision description → text ranking (fallback)
-    """
-    if not API_KEY:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not set")
-
-    import tempfile
-    image_bytes  = await file.read()
-    content_type = file.content_type or "image/jpeg"
-    suffix       = Path(file.filename or "img.jpg").suffix or ".jpg"
-
-    # ── 1. Try BiomedCLIP vector search ───────────────────────────────────
-    try:
-        from app.medical_image_encoder import COLLECTION_NAME
-        from cortex import CortexClient
-
-        with CortexClient("localhost:50051") as _c:
-            img_count = _c.count(COLLECTION_NAME) if _c.has_collection(COLLECTION_NAME) else 0
-
-        if img_count > 0:
-            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-                tmp.write(image_bytes)
-                tmp_path = Path(tmp.name)
-
-            try:
-                encoder = _get_biomed_encoder()
-                with CortexClient("localhost:50051") as client:
-                    results = encoder.search_similar(client, str(tmp_path), top_k=8)
-            finally:
-                tmp_path.unlink(missing_ok=True)
-
-            cases, seen = [], set()
-            for r in results:
-                case_id = r.payload.get("case_id")
-                if case_id and case_id not in seen:
-                    case = get_case_by_id(case_id)
-                    if case:
-                        seen.add(case_id)
-                        c = dict(case)
-                        c["_score"] = round(r.score * 100, 1)
-                        cases.append(c)
-            cases.sort(key=lambda c: c["_score"], reverse=True)
-
-            if cases:
-                return {
-                    "description": "BiomedCLIP vector similarity search",
-                    "cases": [{**_case_meta(c), "score": c["_score"]} for c in cases],
-                }
-    except Exception:
-        pass  # fall through to Gemini vision
-
-    # ── 2. Fallback: Gemini vision description → Gemini ranking ───────────
-    from google import genai
-    from google.genai import types
-
-    client = genai.Client(api_key=API_KEY)
-    vision_resp = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=[
-            types.Part(inline_data=types.Blob(mime_type=content_type, data=image_bytes)),
-            types.Part(text=(
-                "Describe this medical image in clinical terms for case matching. "
-                "Include: imaging modality, body region, key findings, likely diagnosis. "
-                "Be specific and concise (2-3 sentences)."
-            )),
-        ],
-    )
-    description = vision_resp.text
-    results     = _vector_search_cases(description)
-
-    return {
-        "description": description,
-        "cases": [
-            {**_case_meta(c), "score": c.get("_score", 50)}
-            for c in results
-        ],
-    }
-
-
-@app.post("/api/index-images")
-def index_images_api():
-    """
-    Index all case images with BiomedCLIP into VectorAI DB.
-    Run once (or after adding new cases) to enable vector image search.
-    Requires open_clip_torch, torch, pillow.
-    """
-    try:
-        n = index_case_images()
-        return {"ok": True, "indexed": n}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 class StartCaseReq(BaseModel):

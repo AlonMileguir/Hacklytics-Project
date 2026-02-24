@@ -92,54 +92,6 @@ def get_unique_difficulties() -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Image path resolution
-# ---------------------------------------------------------------------------
-
-_MULTICARE_IMG_ROOT = ROOT / "data" / "multicare_raw" / "medcase_subset" / "images"
-
-
-def get_case_image_path(case: dict) -> Optional[Path]:
-    """
-    Resolve the image for a case.
-
-    Priority:
-      1. case["imaging_path"]  — direct file path
-      2. multicare_raw images  — search for PMC-ID-prefixed files (.webp/.jpg/.png)
-      3. MedMNIST download dir — data/<imaging_dataset>/<imaging_label>/
-         (hardcoded demo cases)
-    """
-    # 1. Direct path
-    direct = case.get("imaging_path")
-    if direct:
-        p = Path(direct)
-        if p.exists():
-            return p
-
-    # 2. MultiCaRe raw images: filename starts with the PMC article ID
-    pmc_id = case["id"].split("_")[0]  # e.g. "PMC11148442"
-    if _MULTICARE_IMG_ROOT.exists():
-        matches = sorted(_MULTICARE_IMG_ROOT.rglob(f"{pmc_id}_*"))
-        if matches:
-            return matches[0]
-
-    # 3. MedMNIST folder (demo cases)
-    dataset = case.get("imaging_dataset")
-    label   = case.get("imaging_label")
-    if dataset and label:
-        label_dir = ROOT / "data" / dataset / label
-        if label_dir.exists():
-            images = sorted(label_dir.glob("*.png"))
-            if images:
-                try:
-                    idx = int(case["id"].split("_")[1]) - 1
-                except (IndexError, ValueError):
-                    idx = 0
-                return images[idx % len(images)]
-
-    return None
-
-
-# ---------------------------------------------------------------------------
 # VectorAI DB — case indexing for semantic search
 # ---------------------------------------------------------------------------
 
@@ -208,50 +160,10 @@ def index_all_cases(api_key: str, db_server: str = "localhost:50051"):
             vec = _embed_text(api_key, embed_text)
             payload = _case_payload(case)
             client.upsert(CASES_COLLECTION, id=i, vector=vec, payload=payload)
+            print(f"Indexed case {case['id']} ({i+1}/{len(cases)})")
 
         client.flush(CASES_COLLECTION)
         print(f"Indexed {len(cases)} cases.")
-
-
-def index_case_images(db_server: str = "localhost:50051") -> int:
-    """
-    Encode all case images with BiomedCLIP and store in the medical_images VectorAI collection.
-    Stores case_id in metadata so image search results can be mapped back to cases.
-    Safe to re-run — re-indexes all available images.
-
-    Returns number of images successfully indexed.
-    Requires: pip install open_clip_torch torch pillow
-    """
-    try:
-        from app.medical_image_encoder import MedicalImageEncoder, setup_collection
-        from cortex import CortexClient
-    except ImportError as e:
-        print(f"BiomedCLIP not available: {e}")
-        return 0
-
-    cases   = get_all_cases()
-    encoder = MedicalImageEncoder(db_address=db_server)
-
-    total = 0
-    with CortexClient(db_server) as client:
-        setup_collection(client)
-        for i, case in enumerate(cases):
-            img_path = get_case_image_path(case)
-            if not img_path or not img_path.exists():
-                continue
-            try:
-                encoder.store_image(
-                    client,
-                    image_id=i,
-                    image_path=str(img_path),
-                    metadata={"case_id": case["id"]},
-                )
-                total += 1
-            except Exception as e:
-                print(f"  Failed {case['id']}: {e}")
-
-    print(f"Indexed {total} case images with BiomedCLIP.")
-    return total
 
 
 def search_cases(

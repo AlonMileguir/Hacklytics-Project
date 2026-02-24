@@ -346,8 +346,8 @@ def main():
     print(f"\n{'='*60}")
     print(f"✅  Done! {len(cases)} cases saved to {OUTPUT_JSON}")
     print(f"{'='*60}")
-    print(f"\nLaunch the web app:")
-    print(f"  streamlit run app/web_app.py")
+    print(f"\nLaunch the app:")
+    print(f"  uvicorn app.server:app --reload --port 8000")
 
 
 if __name__ == "__main__":

@@ -168,14 +168,6 @@
       margin-bottom: 4px;
     }
 
-    .inline-img {
-      display: block;
-      max-width: 280px;
-      border-radius: 10px;
-      margin-top: 14px;
-      border: 1px solid #e0e0e0;
-    }
-
     /* ── Loading dots ────────────────────────────────────────────────────── */
     .loading-row {
       display: flex;
@@ -300,29 +292,6 @@
 
     #msg-input::placeholder {
       color: #aaa;
-    }
-
-    #upload-label {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 28px;
-      height: 28px;
-      cursor: pointer;
-      color: #bbb;
-      flex-shrink: 0;
-      border-radius: 50%;
-      transition: color 0.2s, background 0.2s;
-    }
-
-    #upload-label:hover {
-      color: #777;
-      background: #f0f0f0;
-    }
-
-    #upload-label svg {
-      width: 16px;
-      height: 16px;
     }
 
     #send-btn {
@@ -461,32 +430,6 @@
     #finder-search-btn:disabled {
       background: #ccc;
       cursor: default;
-    }
-
-    #finder-dropzone {
-      border: 2px dashed #d8d8d8;
-      border-radius: 14px;
-      padding: 20px;
-      text-align: center;
-      font-size: 0.85rem;
-      color: #aaa;
-      cursor: pointer;
-      transition: border-color 0.18s, background 0.18s, color 0.18s;
-      margin-bottom: 18px;
-    }
-
-    #finder-dropzone:hover,
-    #finder-dropzone.drag-over {
-      border-color: #7b8db0;
-      background: #f0f3f8;
-      color: #7b8db0;
-    }
-
-    #finder-dropzone svg {
-      width: 22px;
-      height: 22px;
-      margin-bottom: 6px;
-      opacity: 0.5;
     }
 
     #finder-status {
@@ -635,40 +578,6 @@
       background: #e0e8f4;
     }
 
-    /* ── Drag overlay (whole-app drag-drop in practice mode) ─────────────── */
-    #drag-overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(123, 141, 176, 0.15);
-      backdrop-filter: blur(2px);
-      z-index: 100;
-      align-items: center;
-      justify-content: center;
-      pointer-events: none;
-    }
-
-    #drag-overlay.active {
-      display: flex;
-    }
-
-    #drag-overlay-inner {
-      background: #fff;
-      border: 2px dashed #7b8db0;
-      border-radius: 20px;
-      padding: 40px 60px;
-      text-align: center;
-      color: #7b8db0;
-      font-size: 1rem;
-      font-weight: 500;
-    }
-
-    #drag-overlay-inner svg {
-      width: 36px;
-      height: 36px;
-      margin-bottom: 12px;
-    }
-
     /* ── Right panel ─────────────────────────────────────────────────────── */
     #right-panel {
       width: 0;
@@ -794,15 +703,6 @@
       object-fit: cover;
       border-radius: 6px;
       border: 1px solid #eee;
-    }
-
-    .panel-img {
-      display: block;
-      width: 100%;
-      border-radius: 8px;
-      margin: 8px 0 6px;
-      border: 1px solid #e8e8e8;
-      cursor: zoom-in;
     }
 
     .empty-note {
@@ -955,17 +855,6 @@
     </div>
   </div>
 
-  <!-- ── Drag overlay (practice mode image drop) ───────────────────────────── -->
-  <div id="drag-overlay">
-    <div id="drag-overlay-inner">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-        <path d="M4 16l4-4 4 4 4-8 4 4" />
-        <rect x="3" y="3" width="18" height="18" rx="2" />
-      </svg>
-      <div>Drop medical image to find similar cases</div>
-    </div>
-  </div>
-
   <!-- ── Main ──────────────────────────────────────────────────────────────── -->
   <div id="main">
 
@@ -974,7 +863,7 @@
       <div id="welcome">
         <h1>Welcome to MockMD.</h1>
         <h2>What type of case would you like to study?</h2>
-        <p>Describe a case in natural language, or switch to Find Cases to browse by image or keyword.</p>
+        <p>Describe a case in natural language, or switch to Find Cases to browse by keyword.</p>
         <p class="source-link">Cases sourced from the
           <a href="https://github.com/mauro-nievoff/MultiCaRe_Dataset" target="_blank" rel="noopener">
             MultiCaRe Dataset
@@ -986,13 +875,6 @@
 
     <div id="input-area">
       <div id="input-row">
-        <label id="upload-label" title="Upload medical image">
-          <input type="file" id="img-file" accept="image/*" style="display:none">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path
-              d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
-          </svg>
-        </label>
         <textarea id="msg-input" rows="1" placeholder="Describe what you'd like to practice…"></textarea>
         <button id="send-btn" title="Send">
           <svg viewBox="0 0 24 24">
@@ -1007,19 +889,6 @@
       <div id="finder-search-row">
         <input type="text" id="finder-query" placeholder="Search by condition, symptom, specialty, imaging type…">
         <button id="finder-search-btn" onclick="runTextSearch()">Search</button>
-      </div>
-
-      <div id="finder-dropzone" onclick="document.getElementById('finder-file').click()">
-        <input type="file" id="finder-file" accept="image/*" style="display:none">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <rect x="3" y="3" width="18" height="18" rx="2" />
-          <circle cx="8.5" cy="8.5" r="1.5" />
-          <path d="M21 15l-5-5L5 21" />
-        </svg>
-        <div>Drop a medical image here, or click to upload</div>
-        <div style="font-size:0.72rem;margin-top:4px;opacity:0.7">
-          Find cases with similar imaging
-        </div>
       </div>
 
       <div id="finder-status"></div>
@@ -1145,18 +1014,6 @@
     sendBtn.addEventListener('click', () => send());
 
     // File upload via paperclip
-    document.getElementById('img-file').addEventListener('change', e => {
-      const file = e.target.files[0];
-      if (file) handleImageUpload(file, 'practice');
-      e.target.value = '';
-    });
-
-    document.getElementById('finder-file').addEventListener('change', e => {
-      const file = e.target.files[0];
-      if (file) handleImageUpload(file, 'finder');
-      e.target.value = '';
-    });
-
     // Finder search on Enter
     document.getElementById('finder-query').addEventListener('keydown', e => {
       if (e.key === 'Enter') runTextSearch();
@@ -1198,7 +1055,7 @@
             appendCaseDivider();
           }
 
-          appendMsg('ai', data.response, data.image_url);
+          appendMsg('ai', data.response);
 
           if (data.case) {
             S.activeCase = data.case;
@@ -1239,21 +1096,13 @@
       document.getElementById('welcome').style.display = 'none';
     }
 
-    function appendMsg(role, text, imageUrl) {
+    function appendMsg(role, text) {
       const wrap = document.createElement('div');
       wrap.className = `msg ${role}`;
 
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
       bubble.innerHTML = mdToHtml(text);
-
-      if (imageUrl) {
-        const img = document.createElement('img');
-        img.src = imageUrl;
-        img.className = 'inline-img';
-        img.alt = 'Medical imaging';
-        bubble.appendChild(img);
-      }
 
       wrap.appendChild(bubble);
       document.getElementById('messages').appendChild(wrap);
@@ -1372,7 +1221,6 @@
             panel.imaging = [{
               type: S.revealed.imaging.type || (S.activeCase && S.activeCase.imaging_type) || 'Imaging',
               findings: S.revealed.imaging.description || '',
-              has_image: S.revealed.imaging.has_image,
             }];
           }
           renderPanel(panel);
@@ -1415,21 +1263,9 @@
       </div>`;
       }
       for (const img of imaging) {
-        // has_image is explicit when injected from S.revealed; fall back to S.revealed check
-        // for Gemini-extracted entries where it's undefined.
-        const hasImage = img.has_image !== undefined
-          ? img.has_image
-          : !!(S.revealed && S.revealed.imaging && S.revealed.imaging.has_image);
-
-        const imgHtml = (S.activeCase && hasImage)
-          ? `<img src="/api/image/${S.activeCase.id}" class="panel-img" alt="${escHtml(img.type)}"
-           onclick="window.open(this.src,'_blank')"
-           onerror="this.style.display='none'">`
-          : '';
         testsHtml += `
       <div style="margin-bottom:14px">
         <div style="font-weight:600;font-size:0.84rem">${escHtml(img.type)}</div>
-        ${imgHtml}
         <div style="font-size:0.8rem;color:#555;line-height:1.5;margin-top:4px">${escHtml(img.findings)}</div>
       </div>`;
       }
@@ -1502,7 +1338,7 @@
         S.revealed = {};
         S.complete = false;
 
-        appendMsg('ai', data.response, data.image_url);
+        appendMsg('ai', data.response);
         showPanel();
         document.getElementById('panel-actions').style.display = 'flex';
         refreshPanelFromHistory();
@@ -1545,45 +1381,6 @@
         setFinderStatus('Search failed. Please try again.');
       } finally {
         document.getElementById('finder-search-btn').disabled = false;
-      }
-    }
-
-    async function handleImageUpload(file, mode) {
-      const fd = new FormData();
-      fd.append('file', file);
-
-      if (mode === 'finder') {
-        setFinderStatus('Analyzing image…');
-        document.getElementById('finder-results').innerHTML = '';
-        try {
-          const r = await fetch('/api/search-by-image', { method: 'POST', body: fd });
-          const data = await r.json();
-          if (data.description) setFinderStatus(`Image: ${data.description.slice(0, 100)}…`);
-          renderFinderResults(data.cases || []);
-        } catch (e) {
-          setFinderStatus('Image search failed. Please try again.');
-        }
-      } else {
-        // Practice mode: start a case with the best image match
-        hideWelcome();
-        const loadId = appendLoading('Analyzing image and finding matching case…');
-        S.busy = true; sendBtn.disabled = true;
-        try {
-          const r = await fetch('/api/search-by-image', { method: 'POST', body: fd });
-          const data = await r.json();
-          removeLoading(loadId);
-
-          if (data.cases && data.cases.length > 0) {
-            await startSpecificCase(data.cases[0].id);
-          } else {
-            appendMsg('ai', 'Could not find a matching case for that image.');
-          }
-        } catch (e) {
-          removeLoading(loadId);
-          appendMsg('ai', 'Image upload failed. Please try again.');
-        } finally {
-          S.busy = false; sendBtn.disabled = false;
-        }
       }
     }
 
@@ -1641,7 +1438,7 @@
         S.revealed = {};
         S.complete = false;
 
-        appendMsg('ai', data.response, data.image_url);
+        appendMsg('ai', data.response);
         showPanel();
         document.getElementById('panel-actions').style.display = 'flex';
         refreshPanelFromHistory();
@@ -1656,48 +1453,6 @@
     function setFinderStatus(msg) {
       document.getElementById('finder-status').textContent = msg;
     }
-
-    // ── Drag and drop (practice mode — whole window) ──────────────────────────
-    let dragCounter = 0;
-
-    document.addEventListener('dragenter', e => {
-      if (S.mode !== 'practice') return;
-      if ([...e.dataTransfer.types].includes('Files')) {
-        dragCounter++;
-        document.getElementById('drag-overlay').classList.add('active');
-      }
-    });
-
-    document.addEventListener('dragleave', () => {
-      if (S.mode !== 'practice') return;
-      dragCounter--;
-      if (dragCounter <= 0) {
-        dragCounter = 0;
-        document.getElementById('drag-overlay').classList.remove('active');
-      }
-    });
-
-    document.addEventListener('dragover', e => e.preventDefault());
-
-    document.addEventListener('drop', e => {
-      e.preventDefault();
-      dragCounter = 0;
-      document.getElementById('drag-overlay').classList.remove('active');
-      if (S.mode !== 'practice') return;
-      const file = e.dataTransfer.files[0];
-      if (file && file.type.startsWith('image/')) handleImageUpload(file, 'practice');
-    });
-
-    // Finder dropzone drag events
-    const finderDz = document.getElementById('finder-dropzone');
-    finderDz.addEventListener('dragover', e => { e.preventDefault(); finderDz.classList.add('drag-over'); });
-    finderDz.addEventListener('dragleave', () => finderDz.classList.remove('drag-over'));
-    finderDz.addEventListener('drop', e => {
-      e.preventDefault();
-      finderDz.classList.remove('drag-over');
-      const file = e.dataTransfer.files[0];
-      if (file && file.type.startsWith('image/')) handleImageUpload(file, 'finder');
-    });
 
     // ── Utilities ─────────────────────────────────────────────────────────────
     function escHtml(s) {

@@ -1,9 +1,7 @@
 """
 Medical case database.
 
-Each case links to a MedMNIST image label that gets downloaded by download_dataset.py.
-  imaging_dataset: "pneumonia" | "path" | "derma"
-  imaging_label:   folder name inside data/<dataset>/
+Cases include imaging metadata for simulation text only.
 
 Cases are loaded by case_manager.py and stored in VectorAI DB.
 """
