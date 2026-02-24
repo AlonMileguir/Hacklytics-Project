@@ -21,6 +21,7 @@ RUN pip install --no-cache-dir actiancortex-0.1.0b1-py3-none-any.whl --break-sys
 # ── Install app Python dependencies ──────────────────────────────────────────
 COPY app/requirements_medical.txt ./requirements_medical.txt
 RUN pip install --no-cache-dir -r requirements_medical.txt --break-system-packages
+RUN pip3 install --no-cache-dir python-multipart --break-system-packages
 
 # ── Copy application code and static assets ──────────────────────────────────
 COPY app/ app/

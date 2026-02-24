@@ -1,17 +1,19 @@
 #!/bin/bash
 set -e
 
+# ── Check for required environment variables ──────────────────────────────────
+if [ -z "$GEMINI_API_KEY" ]; then
+    echo "[startup] WARNING: GEMINI_API_KEY environment variable is not set."
+    echo "[startup]          AI-powered features will not work without it."
+fi
+
 # ── Start VectorAI DB ─────────────────────────────────────────────────────────
 # The base image (williamimoh/actian-vectorai-db:1.0b) ships the VectorAI DB
-# server binary. Try known locations / entrypoints from the parent image.
+# server binary at /usr/local/actianvectorai/bin/vdss-grpc-server
 echo "[startup] Starting VectorAI DB..."
 
-if command -v vde &>/dev/null; then
-    vde &
-elif [ -f /docker-entrypoint.sh ]; then
-    /docker-entrypoint.sh &
-elif [ -f /entrypoint.sh ]; then
-    /entrypoint.sh &
+if [ -f /usr/local/actianvectorai/bin/vdss-grpc-server ]; then
+    /usr/local/actianvectorai/bin/vdss-grpc-server &
 else
     echo "[startup] WARNING: VectorAI DB binary not found – semantic search will fall back to keyword mode."
 fi
