@@ -26,7 +26,7 @@ docker image build -t mock-md . --build-arg GEMINI_API_KEY=...
 Run with:
 
 ```sh
-docker run -p 8000:80 mock-md
+docker run -p 80:80 mock-md
 ```
 
 ## Inspiration

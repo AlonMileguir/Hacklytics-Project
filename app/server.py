@@ -9,6 +9,7 @@ import sys
 import os
 import random
 import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -80,6 +81,7 @@ threading.Thread(target=_background_index, daemon=True).start()
 # ---------------------------------------------------------------------------
 
 _sessions: dict[str, dict] = {}
+_SESSION_TTL_SECONDS = 24 * 60 * 60
 
 _MALE_NAMES   = ["James", "Robert", "Michael", "William", "David", "Richard", "Joseph",
                  "Thomas", "Charles", "Daniel", "Matthew", "Anthony", "Mark", "Donald",
@@ -107,11 +109,20 @@ def _new_session() -> dict:
         "history":  [],
         "revealed": set(),
         "complete": False,
+        "created_at": time.time(),
     }
+
+
+def _cleanup_sessions(now: float) -> None:
+    expired = [sid for sid, sess in _sessions.items()
+               if now - sess.get("created_at", now) > _SESSION_TTL_SECONDS]
+    for sid in expired:
+        _sessions.pop(sid, None)
 
 
 def _get(sid: str) -> dict:
     if sid not in _sessions:
+        _cleanup_sessions(time.time())
         _sessions[sid] = _new_session()
     return _sessions[sid]
 
